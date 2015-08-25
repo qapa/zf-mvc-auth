@@ -164,6 +164,11 @@ class DefaultAuthenticationListener
         }
 
         $type = $this->getTypeFromMap($mvcEvent->getRouteMatch());
+        if (is_array($type)) {
+            // Check if the request match one of the given types
+            $matchedType = $this->getTypeFromRequest($request);
+            $type = in_array($matchedType, $type) ? $matchedType : false;
+        }
         if (false === $type && count($this->adapters) > 1) {
             // Ambiguous situation; no matching type in map, but multiple
             // authentication adapters; return a guest identity.

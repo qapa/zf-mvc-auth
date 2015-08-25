@@ -20,6 +20,7 @@ use Zend\Stdlib\Request;
 use ZF\MvcAuth\Authentication\DefaultAuthenticationListener;
 use ZF\MvcAuth\Authentication\HttpAdapter;
 use ZF\MvcAuth\Authentication\OAuth2Adapter;
+use ZF\MvcAuth\Identity\AuthenticatedIdentity;
 use ZF\MvcAuth\MvcAuthEvent;
 
 class DefaultAuthenticationListenerTest extends TestCase
@@ -598,6 +599,90 @@ class DefaultAuthenticationListenerTest extends TestCase
 
         $identity = $this->listener->__invoke($this->mvcAuthEvent);
         $this->assertInstanceOf('ZF\MvcAuth\Identity\GuestIdentity', $identity);
+    }
+
+    public function testPerformAuthenticationWithMultiTypes()
+    {
+        $map = [
+            'Bar\V1' => ['oauth2', 'basic'],
+        ];
+        $this->listener->setAuthMap($map);
+
+        $request = new HttpRequest();
+        $request->getHeaders()->addHeaderLine('Authorization: Basic TOKEN');
+        $adapter = $this->getMock('ZF\MvcAuth\Authentication\AdapterInterface');
+        $adapter
+            ->expects($this->once())
+            ->method('provides')
+            ->willReturn(['basic'])
+        ;
+        $adapter
+            ->expects($this->once())
+            ->method('getTypeFromRequest')
+            ->with($this->identicalTo($request))
+            ->willReturn('basic');
+
+        $adapter
+            ->expects($this->once())
+            ->method('matches')
+            ->with('basic')
+            ->willReturn(true);
+
+        $identity = new AuthenticatedIdentity('test');
+        $adapter
+            ->expects($this->once())
+            ->method('authenticate')
+            ->willReturn($identity);
+
+        $this->listener->attach($adapter);
+        $routeMatch = new RouteMatch(['controller' => 'Bar\V1\Rest\Test\TestController']);
+
+        $mvcEvent = $this->mvcAuthEvent->getMvcEvent();
+        $mvcEvent
+            ->setResponse(new HttpResponse())
+            ->setRequest($request)
+            ->setRouteMatch($routeMatch);
+
+        $result = $this->listener->__invoke($this->mvcAuthEvent);
+        $this->assertSame($identity, $result);
+    }
+
+    public function testDoNotPerformAuthenticationWithMultiTypes()
+    {
+        $map = [
+            'Bar\V1' => ['oauth2', 'basic'],
+        ];
+        $this->listener->setAuthMap($map);
+
+        $request = new HttpRequest();
+        $request->getHeaders()->addHeaderLine('Authorization: Basic TOKEN');
+        $adapter = $this->getMock('ZF\MvcAuth\Authentication\AdapterInterface');
+        $adapter
+            ->expects($this->once())
+            ->method('provides')
+            ->willReturn(['basic']);
+        $adapter
+            ->expects($this->exactly(2))
+            ->method('getTypeFromRequest')
+            ->with($this->identicalTo($request))
+            ->willReturnOnConsecutiveCalls('not referenced', false);
+        $adapter
+            ->expects($this->never())
+            ->method('matches');
+        $adapter
+            ->expects($this->never())
+            ->method('authenticate');
+
+        $this->listener->attach($adapter);
+        $routeMatch = new RouteMatch(['controller' => 'Bar\V1\Rest\Test\TestController']);
+
+        $mvcEvent = $this->mvcAuthEvent->getMvcEvent();
+        $mvcEvent
+            ->setRequest($request)
+            ->setRouteMatch($routeMatch);
+
+        $result = $this->listener->__invoke($this->mvcAuthEvent);
+        $this->assertInstanceOf('ZF\MvcAuth\Identity\GuestIdentity', $result);
     }
 
     public function testAllowsAttachingAdapters()
